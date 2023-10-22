@@ -33,6 +33,8 @@ export interface TestOptions extends CompileOptions {
   outputFile?: string;
   /** String representing a RegEx used for test filtering. */
   testFilter?: string;
+  // sdfksjdkgjksdg
+  retry?: string;
 }
 
 export async function test(entrypoints: string[], options: TestOptions): Promise<number> {
@@ -224,22 +226,48 @@ export function filterTests(tests: Array<string>, regexString?: string): Array<s
 
 async function testSimulator(synthDir: string, options: TestOptions) {
   const s = new simulator.Simulator({ simfile: synthDir });
-  const { clean, testFilter } = options;
+  const { clean, testFilter, retry } = options;
+  console.log(retry);
+  console.log(typeof retry);
   await s.start();
 
   const testRunner = s.getResource("root/cloud.TestRunner") as std.ITestRunnerClient;
   const tests = await testRunner.listTests();
   const filteredTests = pickOneTestPerEnvironment(filterTests(tests, testFilter));
-  const results = new Array<std.TestResult>();
-  // TODO: run these tests in parallel
-  for (const path of filteredTests) {
-    results.push(await testRunner.runTest(path));
+
+  let retryCount = 3;
+  let runCount = retryCount + 1;
+  let remainingTests = filteredTests;
+  const results: std.TestResult[] = [];
+
+  while (runCount > 0 && remainingTests.length > 0) {
+    const currentResults = await Promise.all(
+      remainingTests.map((path) => testRunner.runTest(path))
+    );
+
+    results.push(...currentResults);
+
+    // Filter out the failed tests to retry
+    remainingTests = currentResults.filter((result) => !result.pass).map((result) => result.path);
+
+    if (remainingTests.length > 0 && runCount > 1) {
+      console.log(`Retrying failed tests. ${runCount - 1} retries left.`);
+    }
+
+    runCount--;
   }
 
   await s.stop();
-
   const testReport = renderTestReport(synthDir, results);
   console.log(testReport);
+
+  if (clean) {
+    rmSync(synthDir, { recursive: true, force: true });
+  } else {
+    noCleanUp(synthDir);
+  }
+
+  return results;
 
   if (clean) {
     rmSync(synthDir, { recursive: true, force: true });

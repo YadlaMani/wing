@@ -4,7 +4,7 @@ bring ex;
 
 let table = new ex.Table( 
     name: "users",
-    primaryKey: "name",
+    primaryKey: "namfe",
     columns: { "gender" => ex.ColumnType.STRING } 
 );
 
